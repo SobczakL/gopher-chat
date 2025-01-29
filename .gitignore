@@ -1,0 +1,30 @@
+# Go binary output
+/bin/
+/obj/
+
+# Build directory (for modules or other build tools)
+build/
+
+# Dependencies and vendor directory
+/vendor/
+
+# Go workspace file
+.go-work/
+
+# IDE specific files
+.idea/
+.vscode/
+
+# User-specific config files
+*.env
+*.local
+
+# Test result files
+*.test
+*.out
+
+# Coverage output
+coverage.out
+
+# OS specific files
+.DS_Store
