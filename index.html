@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gopher Chat</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="messagesContainer" id="messagesContainer"></div>
+    <textarea name="inputBox" class="inputBox" id="inputBox"></textarea>
+    <button onclick="send()" class="button">Send</button>
+    <pre class="connection" id="connection"></pre>
+    <script>
+        const messagesContainer = document.getElementById("messagesContainer")
+        const inputBox = document.getElementById("inputBox")
+        const connection = document.getElementById("connection")
+        const socket = new WebSocket("ws://localhost:8080/chat")
+
+        socket.onopen = () => {
+            connection.innerHTML += "Status: Connected\n"
+        }
+        socket.onmessage = (e) => {
+            const output = document.createElement("p")
+            output.setAttribute("class", "output")
+            output.innerHTML = e.data
+
+            messagesContainer.appendChild(output)
+        }
+
+        socket.onclose = () => {
+            connection.innerHTML += "Status: Disconnected"
+        }
+
+        const send = () => {
+            if (inputBox.value.trim() === "") return;
+            const prevInput = document.createElement("p")
+            prevInput.setAttribute("class", "prevInput")
+            prevInput.innerHTML = inputBox.value
+            messagesContainer.appendChild(prevInput)
+            socket.send(inputBox.value)
+            inputBox.value = "";
+        }
+    </script>
+</body>
+
+</html>
