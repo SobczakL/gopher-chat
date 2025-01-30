@@ -14,7 +14,6 @@ A simple WebSocket-based chat application powered by OpenAI's GPT-4o model. The 
 Make sure you have the following installed:
 
 - [Go](https://go.dev/doc/install) (1.18+ recommended)
-- [Node.js](https://nodejs.org/) (optional, for frontend improvements)
 - [Gorilla WebSocket](https://github.com/gorilla/websocket)
 - [godotenv](https://github.com/joho/godotenv)
 
