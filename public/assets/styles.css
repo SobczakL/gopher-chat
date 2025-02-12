@@ -1,10 +1,9 @@
-p {
+* {
     margin: 0px;
     padding: 0px;
 }
 
-.main {
-    background-color: blue;
+main {
     display: flex;
     justify-content: center;
     border: 1px solid black;
@@ -17,7 +16,11 @@ p {
 }
 
 .userOne {
-    background-color: blue;
+    background-color: pink;
+}
+
+.userTwo {
+    background-color: lightblue;
 }
 
 .messageWindow {

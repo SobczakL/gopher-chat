@@ -3,11 +3,25 @@ package chat
 import (
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 
 	"main/internal/llm"
 )
+
+type Client struct {
+	conn *websocket.Conn
+	send chan []byte
+}
+
+type Hub struct {
+	clients    map[*Client]bool
+	broadcast  chan []byte
+	register   chan *Client
+	unregister chan *Client
+	mutex      sync.Mutex
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -15,32 +29,82 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade failed:", err)
-		return
-	}
-	defer conn.Close()
+func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, _ := upgrader.Upgrade(w, r, nil)
 
-	log.Println("New websocket connection established")
+	client := &Client{
+		conn: conn,
+		send: make(chan []byte, 256),
+	}
+
+	h.register <- client
+
+	go h.readPump(client)
+	go h.writePump(client)
+}
+
+func (h *Hub) Run() {
+	for {
+		select {
+		case client := <-h.register:
+			h.clients[client] = true
+
+		case client := <-h.unregister:
+			delete(h.clients, client)
+
+		case message := <-h.broadcast:
+			for client := range h.clients {
+				client.send <- message
+			}
+		}
+	}
+}
+
+func (h *Hub) readPump(client *Client) {
+	defer func() {
+		h.unregister <- client
+		client.conn.Close()
+	}()
 
 	for {
-		_, message, err := conn.ReadMessage()
+		_, message, err := client.conn.ReadMessage()
 		if err != nil {
-			log.Println("Read error:", err)
+			if websocket.IsUnexpectedCloseError(
+				err,
+				websocket.CloseGoingAway,
+				websocket.CloseAbnormalClosure,
+			) {
+				log.Printf("error: %v", err)
+			}
 			break
 		}
 
-		log.Printf("Receieved message:%s\n", message)
-
+		log.Printf("Received message: %s", message)
 		response := llm.HandleMessageToLLM(string(message))
 
-		err = conn.WriteMessage(websocket.TextMessage, []byte(response))
-		if err != nil {
-			log.Println("Write Error:", err)
-			break
+		// Send response only to the client who sent the message
+		client.send <- []byte(response)
+	}
+}
+
+func (h *Hub) writePump(client *Client) {
+	defer func() {
+		client.conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-client.send:
+			if !ok {
+				client.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			err := client.conn.WriteMessage(websocket.TextMessage, message)
+			if err != nil {
+				log.Println("Write Error:", err)
+				return
+			}
 		}
-		log.Println("WebSocket connection closed")
 	}
 }
