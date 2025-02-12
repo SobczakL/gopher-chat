@@ -10,7 +10,7 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
-func HandleMessageToLLM() string {
+func HandleMessageToLLM(req string) string {
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("did not load env")
@@ -28,7 +28,7 @@ func HandleMessageToLLM() string {
 		context.TODO(),
 		openai.ChatCompletionNewParams{
 			Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-				openai.UserMessage("say this is a test"),
+				openai.UserMessage(req),
 			}),
 			Model: openai.F(openai.ChatModelGPT4o),
 		},
