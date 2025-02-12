@@ -1,22 +1,16 @@
-package main
+package llm
 
 import (
 	"context"
 	"log"
 	"os"
 
-	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
-func main() {
+func HandleMessageToLLM() string {
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("did not load env")
@@ -42,5 +36,5 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	println(chatCompletion.Choices[0].Message.Content)
+	return chatCompletion.Choices[0].Message.Content
 }

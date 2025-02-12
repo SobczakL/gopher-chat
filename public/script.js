@@ -1,3 +1,4 @@
+console.log("hello")
 const messagesContainer = document.getElementById("messagesContainer")
 const inputBox = document.getElementById("inputBox")
 const connection = document.getElementById("connection")
