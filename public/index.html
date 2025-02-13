@@ -10,26 +10,41 @@
 
 <body>
     <main class="main">
-        <section class="user userOne">
-            <div class="messageWindow">
-                <div class="messagesContainer" id="messagesContainerUserOne"></div>
-                <div class="inputContainer">
-                    <textarea name="inputBox" class="inputBox" id="inputBox"></textarea>
-                    <button class="button" id="sendButton">Send</button>
-                </div>
-                <pre class="connection" id="connection"></pre>
-            </div>
+        <section class="userManagement">
+            <form action="">
+                <label for="name">Enter your name</label>
+                <input type="text" id="name">
+                <select name="channelOptions" id="channelOptions">
+                    <option value="default">--Select Channel--</option>
+                </select>
+                <button class="userManagement__button" id="userManagement__button">
+                    Enter
+                </button>
+            </form>
+
         </section>
-        <section class="user userTwo">
-            <div class="messageWindow">
-                <div class="messagesContainer" id="messagesContainerUserTwo"></div>
-                <div class="inputContainer">
-                    <textarea name="inputBox" class="inputBox" id="inputBox"></textarea>
-                    <button class="button" id="sendButton">Send</button>
+        <div class="userContainer">
+            <section class="user userOne">
+                <div class="messageWindow">
+                    <div class="messagesContainer" id="messagesContainerUserOne"></div>
+                    <div class="inputContainer">
+                        <textarea name="inputBox" class="inputBox" id="inputBox"></textarea>
+                        <button class="button" id="sendButton">Send</button>
+                    </div>
+                    <pre class="connection" id="connection"></pre>
                 </div>
-                <pre class="connection" id="connection"></pre>
-            </div>
-        </section>
+            </section>
+            <section class="user userTwo">
+                <div class="messageWindow">
+                    <div class="messagesContainer" id="messagesContainerUserTwo"></div>
+                    <div class="inputContainer">
+                        <textarea name="inputBox" class="inputBox" id="inputBox"></textarea>
+                        <button class="button" id="sendButton">Send</button>
+                    </div>
+                    <pre class="connection" id="connection"></pre>
+                </div>
+            </section>
+        </div>
     </main>
     <script src="./assets/script.js"></script>
 </body>

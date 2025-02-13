@@ -5,15 +5,17 @@
 
 main {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    justify-content: space-between;
     border: 1px solid black;
     width: 100vw;
-    height: 600px;
+    overflow: hidden;
 }
 
-.user {
-    width: 50%;
+.userManagement {
+    height: fit-content;
 }
+
 
 .userOne {
     background-color: pink;
