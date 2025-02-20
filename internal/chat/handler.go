@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -11,12 +12,13 @@ import (
 )
 
 type Client struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn   *websocket.Conn
+	send   chan []byte
+	roomID string
 }
 
 type Hub struct {
-	clients    map[*Client]bool
+	rooms      map[string]map[*Client]bool
 	broadcast  chan []byte
 	register   chan *Client
 	unregister chan *Client
@@ -26,12 +28,14 @@ type Hub struct {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Be more restrictive in production
+	},
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:    make(map[*Client]bool),
+		rooms:      make(map[string]map[*Client]bool),
 		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -39,17 +43,37 @@ func NewHub() *Hub {
 }
 
 func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade failed:", err)
+	roomID := r.URL.Query().Get("room")
+	if roomID == "" {
+		log.Println("No room ID provided")
+		http.Error(w, "Room ID is required", http.StatusBadRequest)
 		return
 	}
 
-	client := &Client{
-		conn: conn,
-		send: make(chan []byte, 256),
+	log.Printf("Attempting to upgrade connection for room: %s", roomID)
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade failed for room %s: %v", roomID, err)
+		return
 	}
-	h.register <- client
+
+	log.Printf("Successfully upgraded connection for room: %s", roomID)
+
+	client := &Client{
+		conn:   conn,
+		send:   make(chan []byte, 256),
+		roomID: roomID,
+	}
+
+	h.mutex.Lock()
+	if h.rooms[roomID] == nil {
+		h.rooms[roomID] = make(map[*Client]bool)
+	}
+	h.rooms[roomID][client] = true
+	h.mutex.Unlock()
+
+	log.Printf("Client added to room %s. Total clients: %d", roomID, len(h.rooms[roomID]))
 
 	go h.readPump(client)
 	go h.writePump(client)
@@ -60,30 +84,26 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.mutex.Lock()
-			h.clients[client] = true
+			if h.rooms[client.roomID] == nil {
+				h.rooms[client.roomID] = make(map[*Client]bool)
+			}
+			h.rooms[client.roomID][client] = true
 			h.mutex.Unlock()
-			log.Printf("New client connected. Total clients: %d", len(h.clients))
+			log.Printf("New client connected to room %s. Total clients in room: %d",
+				client.roomID, len(h.rooms[client.roomID]))
 
 		case client := <-h.unregister:
 			h.mutex.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
+			if _, ok := h.rooms[client.roomID][client]; ok {
+				delete(h.rooms[client.roomID], client)
 				close(client.send)
-			}
-			h.mutex.Unlock()
-			log.Printf("Client disconnected. Total clients: %d", len(h.clients))
-
-		case message := <-h.broadcast:
-			h.mutex.Lock()
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
+				if len(h.rooms[client.roomID]) == 0 {
+					delete(h.rooms, client.roomID)
 				}
 			}
 			h.mutex.Unlock()
+			log.Printf("Client disconnected from room %s. Total clients in room: %d",
+				client.roomID, len(h.rooms[client.roomID]))
 		}
 	}
 }
@@ -93,6 +113,13 @@ func (h *Hub) readPump(client *Client) {
 		h.unregister <- client
 		client.conn.Close()
 	}()
+
+	client.conn.SetReadLimit(512 * 1024) // 512KB max message size
+	client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.conn.SetPongHandler(func(string) error {
+		client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 
 	for {
 		_, message, err := client.conn.ReadMessage()
@@ -116,22 +143,33 @@ func (h *Hub) readPump(client *Client) {
 }
 
 func (h *Hub) writePump(client *Client) {
+	ticker := time.NewTicker(54 * time.Second)
 	defer func() {
+		ticker.Stop()
 		client.conn.Close()
 	}()
 
 	for {
 		select {
 		case message, ok := <-client.send:
+			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				// Channel was closed
 				client.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			err := client.conn.WriteMessage(websocket.TextMessage, message)
+			w, err := client.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
-				log.Println("Write Error:", err)
+				return
+			}
+			w.Write(message)
+
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}

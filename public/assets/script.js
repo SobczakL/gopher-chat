@@ -5,8 +5,33 @@ class User {
         this.id = id
         this.roomId = roomId
         this.element = this.createUserElement()
-        this.socket = new WebSocket(`ws://localhost:8080/chat?room=${roomId}`)
-        this.isInitialized = false
+        this.retryAttempts = 0
+        this.maxRetries = 3
+        this.connectWebSocket()
+    }
+
+    connectWebSocket() {
+        try {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/chat?room=${this.roomId}&userId=${this.id}`;
+            console.log(`Attempting to connect to: ${wsUrl}`);
+            
+            this.socket = new WebSocket(wsUrl);
+            this.setupSocketHandlers();
+        } catch (error) {
+            console.error("WebSocket connection error:", error);
+            this.handleConnectionError();
+        }
+    }
+
+    handleConnectionError() {
+        if (this.retryAttempts < this.maxRetries) {
+            this.retryAttempts++
+            console.log(`Retrying connection... Attempt ${this.retryAttempts}`)
+            setTimeout(() => this.connectWebSocket(), 1000 * this.retryAttempts)
+        } else {
+            this.getElement("connection").innerHTML += `Failed to connect after ${this.maxRetries} attempts\n`
+        }
     }
 
     initialize() {
@@ -43,18 +68,40 @@ class User {
 
     setupSocketHandlers() {
         this.socket.onopen = () => {
-            this.getElement("connection").innerHTML += "Status: Connected\n"
-        }
-        this.socket.onclose = () => {
-            this.getElement("connection").innerHTML += "Status: Disconnected\n"
-        }
-        this.socket.onmessage = (e) => {
-            const output = document.createElement("p")
-            output.setAttribute("class", "output")
-            output.innerHTML = e.data
-            this.getElement('messagesContainer').appendChild(output)
+            console.log(`WebSocket connected for room ${this.roomId}`);
+            this.retryAttempts = 0;
+            this.getElement("connection").innerHTML += `Status: Connected to Room ${this.roomId}\n`;
+        };
+
+        this.socket.onclose = (event) => {
+            console.log(`WebSocket closed for room ${this.roomId}:`, event);
+            this.getElement("connection").innerHTML += `Status: Disconnected from Room ${this.roomId}\n`;
+            if (!event.wasClean) {
+                this.handleConnectionError();
+            }
+        };
+
+        this.socket.onerror = (error) => {
+            console.error("WebSocket Error:", error);
+            this.getElement("connection").innerHTML += `Error: Connection failed\n`;
+        };
+
+        this.socket.onmessage = (event) => {
+            const message = event.data;
+            const messageElement = document.createElement("p");
+            messageElement.setAttribute("class", "message");
+            
+            // Check if it's an AI message
+            if (message.startsWith("AI: ")) {
+                messageElement.classList.add("ai-message");
+            } else {
+                messageElement.classList.add("user-message");
+            }
+            
+            messageElement.innerHTML = message;
+            this.getElement('messagesContainer').appendChild(messageElement);
             this.scrollToBottom();
-        }
+        };
     }
     setupEventListeners() {
         this.getElement("sendButton").addEventListener("click", () => this.send())
@@ -69,11 +116,6 @@ class User {
         const inputBox = this.getElement("inputBox")
         if (inputBox.value.trim() === "") return;
 
-        const prevInput = document.createElement("p")
-        prevInput.setAttribute("class", "prevInput")
-        prevInput.innerHTML = inputBox.value
-        console.log(inputBox.value)
-        this.getElement('messagesContainer').appendChild(prevInput)
         this.socket.send(inputBox.value)
         inputBox.value = "";
         this.scrollToBottom()
@@ -86,8 +128,12 @@ class User {
         container.scrollTop = container.scrollHeight
     }
     destroy() {
-        this.socket.close()
-        this.element.remove()
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.close()
+        }
+        if (this.element && this.element.parentNode) {
+            this.element.parentNode.removeChild(this.element)
+        }
     }
 }
 
@@ -126,18 +172,22 @@ class ChatManager {
         });
     }
     generateRoomId() {
-        return Math.random().toString(36).substring(2, 8)
+        return 'room-' + Math.random().toString(36).substring(2, 8)
     }
 
     joinRoom(roomId) {
         if (this.currentRoom) {
-            this.users.forEach(user => user.destroy());
+            this.users.forEach(user => {
+                user.socket.close()
+                user.destroy()
+            });
             this.users.clear();
             this.mainContainer.innerHTML = '';
         }
 
         this.currentRoom = roomId;
         document.getElementById("currentRoom").textContent = `Current Room: ${roomId}`;
+        document.getElementById("roomInput").value = roomId;
 
         // Enable user controls after joining room
         document.getElementById("addUser").style.display = "inline";
@@ -164,11 +214,16 @@ class ChatManager {
         }
 
         const id = this.getNextUserId();
-        const user = new User(id, this.currentRoom);
-        this.users.set(id, user);
-        this.mainContainer.appendChild(user.element);
-        user.initialize();
-        this.updateUserCount();
+        try {
+            const user = new User(id, this.currentRoom);
+            this.users.set(id, user);
+            this.mainContainer.appendChild(user.element);
+            user.initialize();
+            this.updateUserCount();
+        } catch (error) {
+            console.error("Error adding user:", error);
+            alert("Failed to add user. Please try again.");
+        }
     }
 
     removeUser() {
@@ -193,8 +248,29 @@ class ChatManager {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    const chatManager = new ChatManager(2)
+    try {
+        const chatManager = new ChatManager(2);
+        
+        // Hide user controls initially
+        document.getElementById("addUser").style.display = "none";
+        document.getElementById("removeUser").style.display = "none";
 
-    document.getElementById("addUser").style.display = "none";
-    document.getElementById("removeUser").style.display = "none";
-})
+        // Add error handlers for the room controls
+        document.getElementById("joinRoom").addEventListener("click", (e) => {
+            const roomId = document.getElementById("roomInput").value.trim();
+            if (!roomId) {
+                alert("Please enter a room ID");
+                return;
+            }
+            try {
+                chatManager.joinRoom(roomId);
+            } catch (error) {
+                console.error("Error joining room:", error);
+                alert("Failed to join room. Please try again.");
+            }
+        });
+    } catch (error) {
+        console.error("Error initializing chat:", error);
+        alert("Failed to initialize chat. Please refresh the page.");
+    }
+});
