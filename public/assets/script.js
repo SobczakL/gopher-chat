@@ -1,10 +1,11 @@
 console.log("hello")
 
 class User {
-    constructor(id) {
+    constructor(id, roomId) {
         this.id = id
+        this.roomId = roomId
         this.element = this.createUserElement()
-        this.socket = new WebSocket("ws://localhost:8080/chat")
+        this.socket = new WebSocket(`ws://localhost:8080/chat?room=${roomId}`)
         this.isInitialized = false
     }
 
@@ -20,7 +21,7 @@ class User {
         const userHTML = `
     <section class="user" id="user${this.id}">
         <div class="messageWindow">
-          <h3>User ${this.id}</h3>
+            <h3>User ${this.id} (Room: ${this.roomId})</h3>
           <div class="messagesContainer" id="messagesContainer${this.id}"></div>
           <div class="inputContainer">
             <textarea
@@ -96,27 +97,78 @@ class ChatManager {
         this.minUsers = minUsers
         this.mainContainer = document.getElementById("mainContainer")
         this.userCount = document.getElementById("userCount")
-        this.setupControls()
-        this.initializeUsers()
+        this.roomId = this.generateRoomId()
+        this.currentRoom = null
+        this.setupRoomControls()
     }
-    setupControls() {
-        document.getElementById("addUser").addEventListener("click", () => this.addUser())
-        document.getElementById("removeUser").addEventListener("click", () => this.removeUser())
+
+    setupRoomControls() {
+        const roomInput = document.getElementById("roomInput");
+        const joinButton = document.getElementById("joinRoom");
+        const createButton = document.getElementById("createRoom");
+        const currentRoomDiv = document.getElementById("currentRoom");
+
+        // Join existing room
+        joinButton.addEventListener("click", () => {
+            const roomId = roomInput.value.trim();
+            if (roomId) {
+                this.joinRoom(roomId);
+            } else {
+                alert("Please enter a room ID");
+            }
+        });
+
+        // Create new room
+        createButton.addEventListener("click", () => {
+            const roomId = this.generateRoomId();
+            roomInput.value = roomId;
+            this.joinRoom(roomId);
+        });
+    }
+    generateRoomId() {
+        return Math.random().toString(36).substring(2, 8)
+    }
+
+    joinRoom(roomId) {
+        if (this.currentRoom) {
+            this.users.forEach(user => user.destroy());
+            this.users.clear();
+            this.mainContainer.innerHTML = '';
+        }
+
+        this.currentRoom = roomId;
+        document.getElementById("currentRoom").textContent = `Current Room: ${roomId}`;
+
+        // Enable user controls after joining room
+        document.getElementById("addUser").style.display = "inline";
+        document.getElementById("removeUser").style.display = "inline";
+
+        // Initialize minimum users for the room
+        this.initializeUsers();
     }
 
     initializeUsers() {
+        if (!this.currentRoom) {
+            alert("Please join a room first");
+            return;
+        }
+
         for (let i = 1; i <= this.minUsers; i++) {
-            this.addUser()
+            this.addUser();
         }
     }
-
     addUser() {
-        const id = this.getNextUserId()
-        const user = new User(id)
-        this.users.set(id, user)
-        this.mainContainer.appendChild(user.element)
-        user.initialize()
-        this.updateUserCount()
+        if (!this.currentRoom) {
+            alert("Please join a room first");
+            return;
+        }
+
+        const id = this.getNextUserId();
+        const user = new User(id, this.currentRoom);
+        this.users.set(id, user);
+        this.mainContainer.appendChild(user.element);
+        user.initialize();
+        this.updateUserCount();
     }
 
     removeUser() {
@@ -142,4 +194,7 @@ class ChatManager {
 
 document.addEventListener("DOMContentLoaded", () => {
     const chatManager = new ChatManager(2)
+
+    document.getElementById("addUser").style.display = "none";
+    document.getElementById("removeUser").style.display = "none";
 })
